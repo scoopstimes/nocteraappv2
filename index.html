@@ -24,7 +24,7 @@
         
         if (isLocalhost) {
             // Development: localhost (direct FastAPI)
-            API_BASE_URL = 'http://localhost:8000';
+            API_BASE_URL = 'https://nocteraappv2-36gf.vercel.app';
             API_PATH = '';
             console.log('🔗 Development Mode - Localhost');
         } else if (isNetlify) {
@@ -5298,7 +5298,7 @@
         // ===============================
         // HELPER: FETCH AUDIO FROM API
         // ===============================
-        async function fetchAudioFromAPI(spotifyUrl) {
+        async function fetchAudioFromAPI(item) {
           try {
             // Check internet before making request
             if (!navigator.onLine) {
@@ -5306,37 +5306,54 @@
               throw new Error('❌ No internet connection');
             }
             
-            const res = await fetch(API_PLAY, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url: spotifyUrl })
-            });
-
-            const data = await res.json();
-            console.log('API RESPONSE:', data);
-
-            if (!res.ok || !data.status) {
-              throw new Error(data.message || 'Gagal mengambil data lagu');
-            }
-
-            // Extract audio stream URL (fallback support for multiple response formats)
-            const streamUrl = data.stream_url || data.audio || data.download_url || data.url;
+            let videoId = item.videoId;
             
-            if (!streamUrl) {
-              throw new Error('Tidak ada URL audio dari API');
+            // If no videoId, search for the song to get it
+            if (!videoId) {
+              console.log('No videoId found, searching for:', item.title, '-', item.channel);
+              const searchQuery = `${item.title} ${item.channel}`.trim();
+              
+              try {
+                const searchRes = await fetch(`${window.API_CONFIG.searchEndpoint}?query=${encodeURIComponent(searchQuery)}`);
+                const searchData = await searchRes.json();
+                
+                if (searchData.status === 'success' && searchData.data && searchData.data.length > 0) {
+                  videoId = searchData.data[0].videoId;
+                  console.log('Found videoId from search:', videoId);
+                } else {
+                  throw new Error('No search results found');
+                }
+              } catch (searchErr) {
+                console.error('Search error:', searchErr);
+                throw new Error('Tidak dapat menemukan lagu di YouTube Music');
+              }
+            }
+            
+            // Now fetch the stream URL using the videoId
+            const streamRes = await fetch(`${window.API_CONFIG.baseUrl}/stream?video_id=${encodeURIComponent(videoId)}`);
+            const streamData = await streamRes.json();
+            
+            console.log('Stream API Response:', streamData);
+            
+            if (!streamRes.ok || streamData.status !== 'success') {
+              throw new Error(streamData.message || 'Gagal mengambil stream audio');
+            }
+            
+            if (!streamData.url) {
+              throw new Error('Tidak ada URL stream dari backend');
             }
 
             return {
               success: true,
-              url: streamUrl,
-              title: data.title || 'Unknown Title',
-              artist: data.artist || 'Unknown Artist',
-              cover: data.cover || 'https://via.placeholder.com/180x180?text=No+Cover'
+              url: streamData.url,
+              title: item.title || 'Unknown Title',
+              artist: item.channel || 'Unknown Artist',
+              cover: item.imageUrl || 'https://via.placeholder.com/180x180?text=No+Cover'
             };
 
           } catch (err) {
             const errorMsg = err.message || 'Unknown error';
-            console.error('API Error:', errorMsg);
+            console.error('Stream API Error:', errorMsg);
             
             // Distinguish between network errors and API errors
             if (err instanceof TypeError || err.message.includes('Failed to fetch') || err.message.includes('ERR_CONNECTION')) {
@@ -17914,7 +17931,6 @@ function resetNavVisuals() {
             else if (currentContext === 'home') {
                 initQuickPicks();
                 initRecentlyPlayed();
-                initPopularArtists();
                 initRandomSuggestions();
             }
         }
@@ -18933,8 +18949,8 @@ function resetNavVisuals() {
                     console.log('Fetching audio for song:', item.title, 'with link:', item.link);
                     showLoadingToast('Loading audio...');
                     
-                    // Use new cleaner API with proper error handling
-                    const apiResult = await fetchAudioFromAPI(item.link);
+                    // Use Vercel backend API with YouTube Music stream
+                    const apiResult = await fetchAudioFromAPI(item);
                     hideLoadingToast();
                     
                     if (apiResult.success) {
@@ -18950,10 +18966,9 @@ function resetNavVisuals() {
                         // Cache the result (only the URL, not the metadata)
                         setCachedAudioData(item.link, data.data);
                     } else {
-                        // API failed, try fallback APIs
-                        console.log('Primary API failed:', apiResult.error);
+                        // Vercel backend API failed
+                        console.log('Backend stream API failed:', apiResult.error);
                         
-                        // Check if we're offline
                         if (!navigator.onLine) {
                             console.error('❌ No internet connection - cannot fetch audio');
                             hideLoadingToast();
@@ -18961,55 +18976,9 @@ function resetNavVisuals() {
                             updatePlayIcons(false);
                             data = { status: false };
                         } else {
-                            showLoadingToast('Trying alternative source...');
-                            
-                            let fallbackSuccess = false;
-                            const fallbackAPIs = [
-                                'https://api.siputzx.my.id/api/d/spotify?url=',
-                                'https://api.siputzx.my.id/api/d/spotifyv2?url='
-                            ];
-                            
-                            for (const fallbackAPI of fallbackAPIs) {
-                                try {
-                                    // Check connection again before each attempt
-                                    if (!navigator.onLine) {
-                                        console.log('Lost internet connection during fallback attempts');
-                                        throw new Error('Connection lost');
-                                    }
-                                    
-                                    const res = await fetch(fallbackAPI + encodeURIComponent(item.link));
-                                    const fallbackData = await res.json();
-                                    
-                                    if (fallbackData.status && (fallbackData.data?.url || fallbackData.data?.mp3DownloadLink || fallbackData.url)) {
-                                        const audioUrl = fallbackData.data?.mp3DownloadLink || fallbackData.data?.url || fallbackData.url;
-                                        data = {
-                                            status: true,
-                                            url: audioUrl,
-                                            data: fallbackData.data || fallbackData
-                                        };
-                                        setCachedAudioData(item.link, data.data);
-                                        fallbackSuccess = true;
-                                        console.log('Successfully got audio from fallback API');
-                                        break;
-                                    }
-                                } catch (e) {
-                                    console.log('Fallback attempt failed:', fallbackAPI, e.message);
-                                    if (e.message.includes('Connection lost') || e instanceof TypeError) {
-                                        console.error('❌ Network error during fallback');
-                                        break;
-                                    }
-                                    continue;
-                                }
-                            }
-                            
-                            if (!fallbackSuccess) {
-                                if (!navigator.onLine) {
-                                    data = { status: false, error: 'No internet connection' };
-                                } else {
-                                    data = { status: false };
-                                }
-                            }
                             hideLoadingToast();
+                            showToast('❌ Tidak dapat memutar lagu: ' + apiResult.error);
+                            data = { status: false };
                         }
                     }
                 }
@@ -21798,7 +21767,6 @@ function applyWaveEffectToQR(canvas, logoUrl, onComplete) {
             initSelectedArtistsSections();
             initQuickPicks();
             initRecentlyPlayed();
-            initPopularArtists();
             initRandomSuggestions();
             showToast('Selamat! Preferensimu telah disimpan');
         }
