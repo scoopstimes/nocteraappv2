@@ -6229,7 +6229,7 @@
                         } else {
                             console.log('Fetching audio URL for:', item.link);
                             showLoadingToast('Restoring audio...');
-                            const apiResult = await fetchAudioFromAPI(item.link);
+                            const apiResult = await fetchAudioFromAPI(item);
                             hideLoadingToast();
                             
                             if (apiResult.success) {
@@ -18327,7 +18327,7 @@ function resetNavVisuals() {
                     console.log('Fetching fresh audio:', item.title);
                     
                     try {
-                        const apiResult = await fetchAudioFromAPI(item.link);
+                        const apiResult = await fetchAudioFromAPI(item);
                         
                         if (apiResult.success) {
                             audioUrl = apiResult.url;
@@ -18417,17 +18417,82 @@ function resetNavVisuals() {
                 
                 if (audioUrl) {
                     console.log('Setting audio URL:', audioUrl);
-                    els.audio.pause();
-                    els.audio.src = audioUrl;
-                    els.audio.volume = els.volSlider.value;
-                    els.audio.load();
-                    hideLoadingToast();
-                    els.audio.play().catch(e => {
-                        console.log('Direct play failed:', e.message);
-                        if (!navigator.onLine) {
-                            showToast('❌ Connection lost during playback');
-                        }
-                    });
+                    
+                    // Check if this is a YouTube embed URL
+                    const isYouTubeEmbed = typeof audioUrl === 'string' && audioUrl.includes('youtube.com/embed');
+                    
+                    if (isYouTubeEmbed) {
+                        console.log('YouTube embed detected in retry, showing player modal');
+                        
+                        // Extract videoId from embed URL
+                        let videoId = audioUrl.split('/embed/')[1].split('?')[0];
+                        
+                        // Create a modal with embedded YouTube player
+                        const modal = document.createElement('div');
+                        modal.id = 'youtube-player-modal';
+                        modal.style.cssText = `
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            right: 0;
+                            bottom: 0;
+                            background: rgba(0,0,0,0.9);
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            z-index: 10000;
+                        `;
+                        
+                        const iframe = document.createElement('iframe');
+                        iframe.width = '80%';
+                        iframe.height = '80%';
+                        iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+                        iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                        iframe.allowFullscreen = true;
+                        iframe.style.border = 'none';
+                        iframe.style.borderRadius = '8px';
+                        
+                        const closeBtn = document.createElement('button');
+                        closeBtn.innerHTML = '✕ Close';
+                        closeBtn.style.cssText = `
+                            position: absolute;
+                            top: 20px;
+                            right: 20px;
+                            background: #ff0000;
+                            color: white;
+                            border: none;
+                            padding: 8px 16px;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            font-weight: bold;
+                            z-index: 10001;
+                        `;
+                        closeBtn.onclick = () => {
+                            modal.remove();
+                            updatePlayIcons(false);
+                        };
+                        
+                        modal.appendChild(iframe);
+                        modal.appendChild(closeBtn);
+                        document.body.appendChild(modal);
+                        
+                        hideLoadingToast();
+                        updatePlayIcons(true);
+                        showToast('▶️ Now playing in YouTube player');
+                    } else {
+                        // Normal audio playback
+                        els.audio.pause();
+                        els.audio.src = audioUrl;
+                        els.audio.volume = els.volSlider.value;
+                        els.audio.load();
+                        hideLoadingToast();
+                        els.audio.play().catch(e => {
+                            console.log('Direct play failed:', e.message);
+                            if (!navigator.onLine) {
+                                showToast('❌ Connection lost during playback');
+                            }
+                        });
+                    }
                 } else {
                     throw new Error('No audio URL available');
                 }
@@ -18453,7 +18518,7 @@ function resetNavVisuals() {
             currentPreloadingUrl = nextSong.link;
             try {
                 console.log('Preloading next song:', nextSong.title);
-                const apiResult = await fetchAudioFromAPI(nextSong.link);
+                const apiResult = await fetchAudioFromAPI(nextSong);
                 if (apiResult.success) {
                     setCachedAudioData(nextSong.link, apiResult.url);
                 } else {
