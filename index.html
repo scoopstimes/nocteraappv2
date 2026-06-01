@@ -19017,28 +19017,86 @@ function resetNavVisuals() {
                     const isSameSong = els.audio.src === audioUrl && els.audio.src !== '';
                     
                     if (!isSameSong) {
-                        isAudioReady = false; // Reset ready flag when loading new song
-                        els.audio.loop = false;
-                        allowAutoLoop = false;
-                        els.audio.pause(); // Pause before changing src
-                        els.audio.src = audioUrl;
-                        els.audio.volume = els.volSlider.value;
-                        els.audio.load();
-                        
-                        // Try to play immediately, don't use playAudio() to avoid cascading timeouts
-                        hideLoadingToast();
-                        isPlayingInProgress = true;
-                        els.audio.play().then(() => {
-                            console.log('Audio started playing');
+                        // Check if this is a YouTube embed URL (fallback from backend)
+                        if (data.type === 'youtube_embed' || audioUrl.includes('youtube.com/embed')) {
+                            console.log('YouTube embed detected, showing player modal');
+                            
+                            // Create a modal with embedded YouTube player
+                            const modal = document.createElement('div');
+                            modal.id = 'youtube-player-modal';
+                            modal.style.cssText = `
+                                position: fixed;
+                                top: 0;
+                                left: 0;
+                                right: 0;
+                                bottom: 0;
+                                background: rgba(0,0,0,0.9);
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                z-index: 10000;
+                            `;
+                            
+                            const videoId = data.video_id || item.videoId;
+                            const iframe = document.createElement('iframe');
+                            iframe.width = '80%';
+                            iframe.height = '80%';
+                            iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+                            iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                            iframe.allowFullscreen = true;
+                            iframe.style.border = 'none';
+                            iframe.style.borderRadius = '8px';
+                            
+                            const closeBtn = document.createElement('button');
+                            closeBtn.innerHTML = '✕ Close';
+                            closeBtn.style.cssText = `
+                                position: absolute;
+                                top: 20px;
+                                right: 20px;
+                                background: #ff0000;
+                                color: white;
+                                border: none;
+                                padding: 8px 16px;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                font-weight: bold;
+                                z-index: 10001;
+                            `;
+                            closeBtn.onclick = () => {
+                                modal.remove();
+                                updatePlayIcons(false);
+                            };
+                            
+                            modal.appendChild(iframe);
+                            modal.appendChild(closeBtn);
+                            document.body.appendChild(modal);
+                            
+                            hideLoadingToast();
                             updatePlayIcons(true);
-                            isPlayingInProgress = false;
-                            audioRetryCount = 0;
-                        }).catch(e => {
-                            console.log('Initial play failed:', e);
-                            isPlayingInProgress = false;
-                            // Don't retry here - let user manually press play or wait for timeout
-                            // This breaks the cascade loop
-                        });
+                            showToast('▶️ Now playing in YouTube player');
+                        } else {
+                            // Normal audio playback
+                            isAudioReady = false; // Reset ready flag when loading new song
+                            els.audio.loop = false;
+                            allowAutoLoop = false;
+                            els.audio.pause(); // Pause before changing src
+                            els.audio.src = audioUrl;
+                            els.audio.volume = els.volSlider.value;
+                            els.audio.load();
+                            
+                            // Try to play immediately
+                            hideLoadingToast();
+                            isPlayingInProgress = true;
+                            els.audio.play().then(() => {
+                                console.log('Audio started playing');
+                                updatePlayIcons(true);
+                                isPlayingInProgress = false;
+                                audioRetryCount = 0;
+                            }).catch(e => {
+                                console.log('Initial play failed:', e);
+                                isPlayingInProgress = false;
+                            });
+                        }
                     } else {
                         // Same song - just resume playback if paused
                         console.log('Same song already playing, resuming...');
