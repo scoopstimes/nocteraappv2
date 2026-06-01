@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ytmusicapi import YTMusic
 import time
+import subprocess
+import json
 
 app = FastAPI()
 
@@ -16,9 +18,11 @@ app.add_middleware(
 
 ytmusic = YTMusic()
 
-# Cache untuk home data
+# Cache untuk home data dan audio streams
 home_cache = {}
+stream_cache = {}
 CACHE_TTL = 1800
+STREAM_CACHE_TTL = 3600  # 1 hour untuk stream URLs
 
 def format_results(search_results):
     cleaned_results = []
@@ -69,5 +73,45 @@ def get_home_data():
         home_cache["timestamp"] = current_time
         
         return {"status": "success", "data": data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/stream")
+@app.get("/api/stream")
+def get_stream(video_id: str):
+    """Get playable stream URL for a YouTube Music video"""
+    try:
+        # Check cache first
+        if video_id in stream_cache:
+            cached = stream_cache[video_id]
+            if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
+                return {"status": "success", "url": cached["url"]}
+        
+        # Try to get song info with streaming data
+        info = ytmusic.get_song(video_id)
+        
+        # Extract playable URL from streaming data
+        if "streamingData" in info and "adaptiveFormats" in info["streamingData"]:
+            formats = info["streamingData"]["adaptiveFormats"]
+            
+            # Find audio format
+            for fmt in formats:
+                if "url" in fmt and "audio" in fmt.get("mimeType", ""):
+                    url = fmt["url"]
+                    # Cache it
+                    stream_cache[video_id] = {
+                        "url": url,
+                        "timestamp": time.time()
+                    }
+                    return {"status": "success", "url": url}
+        
+        # Fallback: construct YouTube Music URL
+        youtube_url = f"https://music.youtube.com/watch?v={video_id}"
+        return {
+            "status": "success",
+            "url": youtube_url,
+            "type": "youtube_music_link"
+        }
+        
     except Exception as e:
         return {"status": "error", "message": str(e)}
