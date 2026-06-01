@@ -38,7 +38,7 @@ def format_results(search_results):
 
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "Musikin Aja API is running"}
+    return {"status": "ok", "message": "Musikin Aja API v2 - Real audio streaming"}
 
 @app.get("/search")
 @app.get("/api/search")
