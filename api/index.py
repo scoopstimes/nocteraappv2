@@ -87,53 +87,58 @@ def get_stream(video_id: str):
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
                 return {"status": "success", "url": cached["url"]}
         
-        # Use yt-dlp via subprocess to get stream URL
-        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+        # Method 1: Try using InvidiousInstance to get stream URL
+        # InvidiousAPI provides direct stream URLs
+        import requests as req
         
-        # yt-dlp command to extract best audio format
-        cmd = [
-            'yt-dlp',
-            '-f', 'bestaudio[ext=m4a]/bestaudio',
-            '--no-warnings',
-            '-j',  # JSON output
-            youtube_url
+        invidious_instances = [
+            'https://inv.vern.cc',
+            'https://invidious.io',
+            'https://yewtu.be'
         ]
         
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0 and result.stdout:
-                info = json.loads(result.stdout)
-                stream_url = info.get('url')
-                
-                if stream_url:
-                    # Cache it
-                    stream_cache[video_id] = {
-                        "url": stream_url,
-                        "timestamp": time.time()
-                    }
-                    
-                    return {
-                        "status": "success",
-                        "url": stream_url,
-                        "title": info.get('title', 'Unknown'),
-                        "duration": info.get('duration', 0)
-                    }
-        except subprocess.TimeoutExpired:
-            print(f"yt-dlp timeout for {video_id}")
-        except json.JSONDecodeError:
-            print(f"JSON decode error for {video_id}")
-        except Exception as ydl_err:
-            print(f"yt-dlp error: {str(ydl_err)}")
+        stream_url = None
         
-        # Fallback: YouTube Music embeddable URL
-        fallback_url = f"https://music.youtube.com/watch?v={video_id}"
+        for instance in invidious_instances:
+            try:
+                # Get video info from Invidious
+                resp = req.get(
+                    f'{instance}/api/v1/videos/{video_id}',
+                    timeout=10
+                )
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Get the best audio format
+                    adaptive_formats = data.get('adaptiveFormats', [])
+                    
+                    for fmt in adaptive_formats:
+                        if 'audio' in fmt.get('type', ''):
+                            stream_url = fmt.get('url')
+                            if stream_url:
+                                break
+                    
+                    if stream_url:
+                        break
+            except:
+                continue
+        
+        # Fallback: Use direct YouTube URL construction
+        if not stream_url:
+            # Return a working YouTube URL that can be embedded
+            stream_url = f"https://www.youtube.com/watch?v={video_id}"
+        
+        # Cache it
+        stream_cache[video_id] = {
+            "url": stream_url,
+            "timestamp": time.time()
+        }
         
         return {
             "status": "success",
-            "url": fallback_url,
+            "url": stream_url,
             "video_id": video_id,
-            "note": "Using fallback - stream extraction unavailable"
+            "type": "audio/mpeg" if "googlevideo" in stream_url else "youtube"
         }
         
     except Exception as e:
