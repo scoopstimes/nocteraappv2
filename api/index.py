@@ -79,31 +79,61 @@ def get_home_data():
 @app.get("/stream")
 @app.get("/api/stream")
 def get_stream(video_id: str):
-    """Get playable stream for a YouTube Music video"""
+    """Get playable audio stream URL for a YouTube video"""
     try:
-        # Use YouTube Music embed/player URL
-        # These work with HTML5 audio tag or iframe
-        
         # Check cache first
         if video_id in stream_cache:
             cached = stream_cache[video_id]
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
                 return {"status": "success", "url": cached["url"]}
         
-        # Return YouTube Music player URL (reliable, works everywhere)
-        stream_url = f"https://music.youtube.com/watch?v={video_id}"
+        # Use yt-dlp via subprocess to get stream URL
+        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
         
-        # Cache it
-        stream_cache[video_id] = {
-            "url": stream_url,
-            "timestamp": time.time()
-        }
+        # yt-dlp command to extract best audio format
+        cmd = [
+            'yt-dlp',
+            '-f', 'bestaudio[ext=m4a]/bestaudio',
+            '--no-warnings',
+            '-j',  # JSON output
+            youtube_url
+        ]
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0 and result.stdout:
+                info = json.loads(result.stdout)
+                stream_url = info.get('url')
+                
+                if stream_url:
+                    # Cache it
+                    stream_cache[video_id] = {
+                        "url": stream_url,
+                        "timestamp": time.time()
+                    }
+                    
+                    return {
+                        "status": "success",
+                        "url": stream_url,
+                        "title": info.get('title', 'Unknown'),
+                        "duration": info.get('duration', 0)
+                    }
+        except subprocess.TimeoutExpired:
+            print(f"yt-dlp timeout for {video_id}")
+        except json.JSONDecodeError:
+            print(f"JSON decode error for {video_id}")
+        except Exception as ydl_err:
+            print(f"yt-dlp error: {str(ydl_err)}")
+        
+        # Fallback: YouTube Music embeddable URL
+        fallback_url = f"https://music.youtube.com/watch?v={video_id}"
         
         return {
             "status": "success",
-            "url": stream_url,
+            "url": fallback_url,
             "video_id": video_id,
-            "type": "youtube_music"
+            "note": "Using fallback - stream extraction unavailable"
         }
         
     except Exception as e:
