@@ -1,9 +1,17 @@
 {
-  "buildCommand": "pip install -r requirements.txt",
-  "outputDirectory": ".",
-  "functions": {
-    "api/**/*.py": {
-      "runtime": "python3.11"
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
     }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
+  ],
+  "env": {
+    "PYTHONUNBUFFERED": "1"
   }
 }

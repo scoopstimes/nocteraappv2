@@ -1,8 +1,19 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from ytmusicapi import YTMusic
 import time
 
 app = FastAPI()
+
+# Enable CORS for all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 ytmusic = YTMusic()
 
 # Cache untuk home data
@@ -26,6 +37,7 @@ def root():
     return {"status": "ok", "message": "Musikin Aja API is running"}
 
 @app.get("/search")
+@app.get("/api/search")
 def search_music(query: str):
     try:
         search_results = ytmusic.search(query, filter="songs", limit=12)
@@ -34,6 +46,7 @@ def search_music(query: str):
         return {"status": "error", "message": str(e)}
 
 @app.get("/home")
+@app.get("/api/home")
 def get_home_data():
     current_time = time.time()
     
