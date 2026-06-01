@@ -29,13 +29,13 @@
             console.log('🔗 Development Mode - Localhost');
         } else if (isNetlify) {
             // Production: Netlify frontend → Vercel backend API
-            API_BASE_URL = 'https://nocteraappv2.vercel.app';
-            API_PATH = '/api';
+            API_BASE_URL = 'https://nocteraappv2-36gf.vercel.app';
+            API_PATH = '';
             console.log('🔗 Production Mode - Netlify Frontend → Vercel Backend');
         } else {
             // Fallback or other domain
             API_BASE_URL = window.location.origin.replace(/\/$/, '');
-            API_PATH = '/api';
+            API_PATH = '';
             console.log('🔗 Custom Domain Mode');
         }
         
