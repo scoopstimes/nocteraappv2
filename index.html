@@ -5335,23 +5335,17 @@
             
             console.log('Stream API Response:', streamData);
             
-            // Check if status is error (audio extraction failed)
-            if (streamData.status === 'error') {
-              console.log('Audio extraction failed, suggesting search');
-              throw new Error(`${streamData.message || 'Cannot extract audio'} - Try searching for the song`);
-            }
-            
-            if (!streamRes.ok || streamData.status !== 'success') {
+            if (!streamRes.ok || (streamData.status !== 'success' && streamData.status !== 'redirect')) {
               throw new Error(streamData.message || 'Gagal mengambil stream audio');
             }
             
-            if (!streamData.url) {
+            if (!streamData.url && !streamData.recommendation) {
               throw new Error('Tidak ada URL stream dari backend');
             }
 
             return {
               success: true,
-              url: streamData.url,
+              url: streamData.url || videoId,  // Fall back to videoId if no URL
               title: item.title || 'Unknown Title',
               artist: item.channel || 'Unknown Artist',
               cover: item.imageUrl || 'https://via.placeholder.com/180x180?text=No+Cover'

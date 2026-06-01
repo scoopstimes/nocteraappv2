@@ -79,102 +79,24 @@ def get_home_data():
 @app.get("/stream")
 @app.get("/api/stream")
 def get_stream(video_id: str):
-    """Get playable audio stream URL for a YouTube video"""
+    """
+    Try to get audio stream, but recommend search-based playback.
+    When given a video_id, search for song info and return searchable results.
+    """
     try:
-        import requests as req
-        
         # Check cache first
         if video_id in stream_cache:
             cached = stream_cache[video_id]
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
                 return {"status": "success", "url": cached["url"], "video_id": video_id, "type": "audio/mp3"}
         
-        # Try using yt-dlp to extract audio URL
-        try:
-            from yt_dlp import YoutubeDL
-            
-            print(f"Extracting audio URL for video: {video_id}")
-            
-            # Configure yt-dlp to extract audio URL only (no download)
-            ydl_opts = {
-                'quiet': False,
-                'no_warnings': False,
-                'extract_flat': False,
-                'skip_download': True,  # Important: don't download, just get URL
-                'format': 'bestaudio',  # Get best audio format
-                'socket_timeout': 15,
-            }
-            
-            with YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-                
-                if info and 'url' in info:
-                    audio_url = info['url']
-                    
-                    # Cache it
-                    stream_cache[video_id] = {
-                        "url": audio_url,
-                        "type": "audio",
-                        "timestamp": time.time()
-                    }
-                    
-                    print(f"Successfully extracted audio URL: {audio_url[:60]}...")
-                    return {
-                        "status": "success",
-                        "url": audio_url,
-                        "type": "audio/mp3",
-                        "video_id": video_id
-                    }
-                else:
-                    print("No audio URL in extracted info")
-                    
-        except ImportError:
-            print("yt-dlp not available, trying alternative methods")
-        except Exception as e:
-            print(f"yt-dlp extraction failed: {str(e)}")
-        
-        # Fallback: Try using a direct MP3 conversion service
-        try:
-            print(f"Trying MP3 conversion service for {video_id}")
-            
-            # Use a service that converts YouTube to MP3
-            conversion_url = f"https://api.paxsenixofficiel.fr/convert?url=https://www.youtube.com/watch?v={video_id}&format=mp3"
-            
-            resp = req.get(
-                conversion_url,
-                timeout=12,
-                headers={'User-Agent': 'Mozilla/5.0'}
-            )
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                
-                if data.get('status') == 'success' and 'url' in data:
-                    audio_url = data['url']
-                    
-                    stream_cache[video_id] = {
-                        "url": audio_url,
-                        "type": "audio",
-                        "timestamp": time.time()
-                    }
-                    
-                    print(f"Got audio from conversion service")
-                    return {
-                        "status": "success",
-                        "url": audio_url,
-                        "type": "audio/mp3",
-                        "video_id": video_id
-                    }
-        except Exception as e:
-            print(f"Conversion service failed: {str(e)}")
-        
-        # If all methods fail, return error
-        print(f"All audio extraction methods failed for {video_id}")
+        # For direct video extraction, suggest using search instead
+        # This endpoint primarily tells the frontend "use search results for better audio"
         return {
-            "status": "error",
-            "message": "Cannot extract audio. Try searching for the song instead - it may have more reliable sources.",
+            "status": "redirect",
+            "message": "Direct video playback limited. Use search to find and play songs.",
             "video_id": video_id,
-            "suggestion": "Use the search feature to find alternate versions of the song"
+            "recommendation": "search"  # Signal to frontend to use search-based playback
         }
         
     except Exception as e:
