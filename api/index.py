@@ -87,7 +87,7 @@ def get_stream(video_id: str):
         if video_id in stream_cache:
             cached = stream_cache[video_id]
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
-                return {"status": "success", "url": cached["url"], "type": cached.get("type", "mp3")}
+                return {"status": "success", "url": cached["url"], "video_id": video_id, "type": cached.get("type", "mp3")}
         
         # Try using Piped API (more reliable than Invidious)
         piped_instance = "https://piped.kavin.rocks"
@@ -140,7 +140,7 @@ def get_stream(video_id: str):
         return {
             "status": "success",
             "url": youtube_embed,
-            "type": "youtube_embed",
+            "type": "embed",
             "video_id": video_id,
             "note": "Using fallback player - direct stream unavailable"
         }

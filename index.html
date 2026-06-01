@@ -19018,7 +19018,9 @@ function resetNavVisuals() {
                     
                     if (!isSameSong) {
                         // Check if this is a YouTube embed URL (fallback from backend)
-                        if (data.type === 'youtube_embed' || audioUrl.includes('youtube.com/embed')) {
+                        const isYouTubeEmbed = data.type === 'youtube_embed' || data.type === 'embed' || audioUrl.includes('youtube.com/embed');
+                        
+                        if (isYouTubeEmbed) {
                             console.log('YouTube embed detected, showing player modal');
                             
                             // Create a modal with embedded YouTube player
@@ -19037,7 +19039,14 @@ function resetNavVisuals() {
                                 z-index: 10000;
                             `;
                             
-                            const videoId = data.video_id || item.videoId;
+                            // Extract videoId from embed URL or use direct videoId
+                            let videoId = data.video_id || item.videoId;
+                            if (!videoId && audioUrl.includes('youtube.com/embed/')) {
+                                videoId = audioUrl.split('/embed/')[1].split('?')[0];
+                            }
+                            
+                            console.log('Using videoId for YouTube player:', videoId);
+                            
                             const iframe = document.createElement('iframe');
                             iframe.width = '80%';
                             iframe.height = '80%';
