@@ -5345,7 +5345,8 @@
 
             return {
               success: true,
-              url: streamData.url || videoId,  // Fall back to videoId if no URL
+              url: streamData.url || videoId,
+              type: streamData.type || 'audio',  // 'youtube' or 'audio'
               title: item.title || 'Unknown Title',
               artist: item.channel || 'Unknown Artist',
               cover: item.imageUrl || 'https://via.placeholder.com/180x180?text=No+Cover'
@@ -18417,17 +18418,66 @@ function resetNavVisuals() {
                 
                 if (audioUrl) {
                     console.log('Setting audio URL:', audioUrl);
-                    els.audio.pause();
-                    els.audio.src = audioUrl;
-                    els.audio.volume = els.volSlider.value;
-                    els.audio.load();
-                    hideLoadingToast();
-                    els.audio.play().catch(e => {
-                        console.log('Direct play failed:', e.message);
-                        if (!navigator.onLine) {
-                            showToast('❌ Connection lost during playback');
+                    
+                    // Check if this is a YouTube URL (no visible embed!)
+                    const isYouTube = audioUrl.includes('youtube.com/embed');
+                    
+                    if (isYouTube) {
+                        console.log('Playing YouTube - hidden player mode');
+                        
+                        // Extract videoId
+                        let videoId = audioUrl.split('/embed/')[1].split('?')[0];
+                        
+                        // Create HIDDEN iframe (invisible to user)
+                        let hiddenPlayer = document.getElementById('hidden-yt-player');
+                        if (!hiddenPlayer) {
+                            hiddenPlayer = document.createElement('div');
+                            hiddenPlayer.id = 'hidden-yt-player';
+                            hiddenPlayer.style.cssText = `
+                                position: fixed;
+                                bottom: -9999px;
+                                left: -9999px;
+                                width: 1px;
+                                height: 1px;
+                                opacity: 0;
+                                pointer-events: none;
+                                visibility: hidden;
+                            `;
+                            document.body.appendChild(hiddenPlayer);
                         }
-                    });
+                        
+                        // Create hidden iframe
+                        const iframe = document.createElement('iframe');
+                        iframe.style.cssText = `
+                            width: 100%;
+                            height: 100%;
+                            border: none;
+                            opacity: 0;
+                        `;
+                        iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&controls=0&modestbranding=1`;
+                        iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                        
+                        hiddenPlayer.innerHTML = '';
+                        hiddenPlayer.appendChild(iframe);
+                        
+                        // Show normal music player - user won't see YouTube at all
+                        hideLoadingToast();
+                        updatePlayIcons(true);
+                        showToast('▶️ Now playing');
+                    } else {
+                        // Normal audio playback
+                        els.audio.pause();
+                        els.audio.src = audioUrl;
+                        els.audio.volume = els.volSlider.value;
+                        els.audio.load();
+                        hideLoadingToast();
+                        els.audio.play().catch(e => {
+                            console.log('Direct play failed:', e.message);
+                            if (!navigator.onLine) {
+                                showToast('❌ Connection lost during playback');
+                            }
+                        });
+                    }
                 } else {
                     throw new Error('No audio URL available');
                 }
@@ -19021,27 +19071,74 @@ function resetNavVisuals() {
                     const isSameSong = els.audio.src === audioUrl && els.audio.src !== '';
                     
                     if (!isSameSong) {
-                        // Normal audio playback
-                        isAudioReady = false; // Reset ready flag when loading new song
-                        els.audio.loop = false;
-                        allowAutoLoop = false;
-                        els.audio.pause(); // Pause before changing src
-                        els.audio.src = audioUrl;
-                        els.audio.volume = els.volSlider.value;
-                        els.audio.load();
+                        // Check if YouTube URL (hidden player mode)
+                        const isYouTube = audioUrl && audioUrl.includes('youtube.com/embed');
                         
-                        // Try to play immediately
-                        hideLoadingToast();
-                        isPlayingInProgress = true;
-                        els.audio.play().then(() => {
-                            console.log('Audio started playing');
+                        if (isYouTube) {
+                            console.log('YouTube URL detected - using hidden player');
+                            
+                            // Extract videoId
+                            let videoId = audioUrl.split('/embed/')[1].split('?')[0];
+                            
+                            // Create HIDDEN iframe (invisible to user)
+                            let hiddenPlayer = document.getElementById('hidden-yt-player');
+                            if (!hiddenPlayer) {
+                                hiddenPlayer = document.createElement('div');
+                                hiddenPlayer.id = 'hidden-yt-player';
+                                hiddenPlayer.style.cssText = `
+                                    position: fixed;
+                                    bottom: -9999px;
+                                    left: -9999px;
+                                    width: 1px;
+                                    height: 1px;
+                                    opacity: 0;
+                                    pointer-events: none;
+                                    visibility: hidden;
+                                `;
+                                document.body.appendChild(hiddenPlayer);
+                            }
+                            
+                            // Create hidden iframe
+                            const iframe = document.createElement('iframe');
+                            iframe.style.cssText = `
+                                width: 100%;
+                                height: 100%;
+                                border: none;
+                                opacity: 0;
+                            `;
+                            iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&controls=0&modestbranding=1`;
+                            iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                            
+                            hiddenPlayer.innerHTML = '';
+                            hiddenPlayer.appendChild(iframe);
+                            
+                            // Show normal music player
+                            hideLoadingToast();
+                            isPlayingInProgress = false;
                             updatePlayIcons(true);
-                            isPlayingInProgress = false;
-                            audioRetryCount = 0;
-                        }).catch(e => {
-                            console.log('Initial play failed:', e);
-                            isPlayingInProgress = false;
-                        });
+                        } else {
+                            // Normal audio playback
+                            isAudioReady = false; // Reset ready flag when loading new song
+                            els.audio.loop = false;
+                            allowAutoLoop = false;
+                            els.audio.pause(); // Pause before changing src
+                            els.audio.src = audioUrl;
+                            els.audio.volume = els.volSlider.value;
+                            els.audio.load();
+                            
+                            // Try to play immediately
+                            hideLoadingToast();
+                            isPlayingInProgress = true;
+                            els.audio.play().then(() => {
+                                console.log('Audio started playing');
+                                updatePlayIcons(true);
+                                isPlayingInProgress = false;
+                                audioRetryCount = 0;
+                            }).catch(e => {
+                                console.log('Initial play failed:', e);
+                                isPlayingInProgress = false;
+                            });
+                        }
                     } else {
                         // Same song - just resume playback if paused
                         console.log('Same song already playing, resuming...');

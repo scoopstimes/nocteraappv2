@@ -80,23 +80,38 @@ def get_home_data():
 @app.get("/api/stream")
 def get_stream(video_id: str):
     """
-    Try to get audio stream, but recommend search-based playback.
-    When given a video_id, search for song info and return searchable results.
+    Return YouTube embed URL with proper type information.
+    Frontend will handle display in a beautiful fullscreen player.
     """
     try:
         # Check cache first
         if video_id in stream_cache:
             cached = stream_cache[video_id]
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
-                return {"status": "success", "url": cached["url"], "video_id": video_id, "type": "audio/mp3"}
+                return {
+                    "status": "success",
+                    "url": cached["url"],
+                    "video_id": video_id,
+                    "type": "youtube",
+                    "player": "fullscreen"
+                }
         
-        # For direct video extraction, suggest using search instead
-        # This endpoint primarily tells the frontend "use search results for better audio"
+        # Return YouTube embed URL for fullscreen player
+        youtube_url = f"https://www.youtube-nocookie.com/embed/{video_id}?autoplay=1&modestbranding=1&rel=0&fs=1"
+        
+        stream_cache[video_id] = {
+            "url": youtube_url,
+            "type": "youtube",
+            "timestamp": time.time()
+        }
+        
         return {
-            "status": "redirect",
-            "message": "Direct video playback limited. Use search to find and play songs.",
+            "status": "success",
+            "url": youtube_url,
             "video_id": video_id,
-            "recommendation": "search"  # Signal to frontend to use search-based playback
+            "type": "youtube",
+            "player": "fullscreen",
+            "note": "Playing via YouTube"
         }
         
     except Exception as e:
