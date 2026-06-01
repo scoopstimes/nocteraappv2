@@ -89,98 +89,96 @@ def get_stream(video_id: str):
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
                 return {"status": "success", "url": cached["url"], "video_id": video_id, "type": "audio/mp3"}
         
-        # Try multiple Piped instances
-        piped_instances = [
-            "https://piped.kavin.rocks",
-            "https://piped.silkky.cloud",
-            "https://piped.moomoo.me",
-            "https://piped.artemislena.eu"
-        ]
-        
-        for piped_instance in piped_instances:
-            try:
-                print(f"Trying Piped instance: {piped_instance}")
-                
-                # Get video info from Piped
-                resp = req.get(
-                    f'{piped_instance}/api/v1/streams/{video_id}',
-                    timeout=10,
-                    headers={'User-Agent': 'Mozilla/5.0'}
-                )
-                
-                if resp.status_code == 200:
-                    data = resp.json()
-                    audio_streams = data.get('audioStreams', [])
-                    
-                    # Get best quality audio
-                    if audio_streams:
-                        # Sort by bitrate (highest first)
-                        audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
-                        stream_url = audio_streams[0].get('url')
-                        
-                        if stream_url:
-                            # Cache it
-                            stream_cache[video_id] = {
-                                "url": stream_url,
-                                "type": "audio",
-                                "timestamp": time.time()
-                            }
-                            
-                            print(f"Success from {piped_instance}")
-                            return {
-                                "status": "success",
-                                "url": stream_url,
-                                "type": "audio/mp3",
-                                "video_id": video_id
-                            }
-            except Exception as e:
-                print(f"Piped instance {piped_instance} failed: {str(e)}")
-                continue
-        
-        # Try HLS stream extraction using another method
+        # Try using yt-dlp to extract audio URL
         try:
-            print(f"Trying alternative audio extraction for {video_id}")
-            # Try using a direct YouTube extraction service
-            alt_services = [
-                f"https://yt-audio.herokuapp.com/api/v1/download?video_id={video_id}",
-                f"https://api.codetabs.com/v1/proxy?quest=https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}"
-            ]
+            from yt_dlp import YoutubeDL
             
-            for service_url in alt_services:
-                try:
-                    resp = req.get(service_url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
-                    if resp.status_code == 200:
-                        # If we get any response, try to extract URL
-                        try:
-                            json_data = resp.json()
-                            if isinstance(json_data, dict) and 'download_url' in json_data:
-                                stream_url = json_data['download_url']
-                                stream_cache[video_id] = {
-                                    "url": stream_url,
-                                    "type": "audio",
-                                    "timestamp": time.time()
-                                }
-                                return {
-                                    "status": "success",
-                                    "url": stream_url,
-                                    "type": "audio/mp3",
-                                    "video_id": video_id
-                                }
-                        except:
-                            pass
-                except:
-                    pass
+            print(f"Extracting audio URL for video: {video_id}")
+            
+            # Configure yt-dlp to extract audio URL only (no download)
+            ydl_opts = {
+                'quiet': False,
+                'no_warnings': False,
+                'extract_flat': False,
+                'skip_download': True,  # Important: don't download, just get URL
+                'format': 'bestaudio',  # Get best audio format
+                'socket_timeout': 15,
+            }
+            
+            with YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                
+                if info and 'url' in info:
+                    audio_url = info['url']
+                    
+                    # Cache it
+                    stream_cache[video_id] = {
+                        "url": audio_url,
+                        "type": "audio",
+                        "timestamp": time.time()
+                    }
+                    
+                    print(f"Successfully extracted audio URL: {audio_url[:60]}...")
+                    return {
+                        "status": "success",
+                        "url": audio_url,
+                        "type": "audio/mp3",
+                        "video_id": video_id
+                    }
+                else:
+                    print("No audio URL in extracted info")
+                    
+        except ImportError:
+            print("yt-dlp not available, trying alternative methods")
         except Exception as e:
-            print(f"Alternative service failed: {str(e)}")
+            print(f"yt-dlp extraction failed: {str(e)}")
         
-        # If all extraction methods fail, return error
+        # Fallback: Try using a direct MP3 conversion service
+        try:
+            print(f"Trying MP3 conversion service for {video_id}")
+            
+            # Use a service that converts YouTube to MP3
+            conversion_url = f"https://api.paxsenixofficiel.fr/convert?url=https://www.youtube.com/watch?v={video_id}&format=mp3"
+            
+            resp = req.get(
+                conversion_url,
+                timeout=12,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                
+                if data.get('status') == 'success' and 'url' in data:
+                    audio_url = data['url']
+                    
+                    stream_cache[video_id] = {
+                        "url": audio_url,
+                        "type": "audio",
+                        "timestamp": time.time()
+                    }
+                    
+                    print(f"Got audio from conversion service")
+                    return {
+                        "status": "success",
+                        "url": audio_url,
+                        "type": "audio/mp3",
+                        "video_id": video_id
+                    }
+        except Exception as e:
+            print(f"Conversion service failed: {str(e)}")
+        
+        # If all methods fail, return error
+        print(f"All audio extraction methods failed for {video_id}")
         return {
             "status": "error",
-            "message": "Unable to extract audio stream. Try searching for the song instead.",
-            "video_id": video_id
+            "message": "Cannot extract audio. Try searching for the song instead - it may have more reliable sources.",
+            "video_id": video_id,
+            "suggestion": "Use the search feature to find alternate versions of the song"
         }
         
     except Exception as e:
+        print(f"Stream endpoint error: {str(e)}")
         return {
             "status": "error",
             "message": str(e),

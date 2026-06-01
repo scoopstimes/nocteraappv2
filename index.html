@@ -5335,6 +5335,12 @@
             
             console.log('Stream API Response:', streamData);
             
+            // Check if status is error (audio extraction failed)
+            if (streamData.status === 'error') {
+              console.log('Audio extraction failed, suggesting search');
+              throw new Error(`${streamData.message || 'Cannot extract audio'} - Try searching for the song`);
+            }
+            
             if (!streamRes.ok || streamData.status !== 'success') {
               throw new Error(streamData.message || 'Gagal mengambil stream audio');
             }
@@ -18437,6 +18443,10 @@ function resetNavVisuals() {
                 
                 if (!navigator.onLine) {
                     showToast('❌ No internet connection. Please check your connection');
+                } else if (e.message && e.message.includes('extraction failed')) {
+                    showToast('🔍 Try searching for this song');
+                } else if (e.message && e.message.includes('Cannot extract')) {
+                    showToast('🔍 Try using search to find the song');
                 } else {
                     showToast('❌ Unable to load audio - try another song');
                 }
