@@ -87,62 +87,97 @@ def get_stream(video_id: str):
         if video_id in stream_cache:
             cached = stream_cache[video_id]
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
-                return {"status": "success", "url": cached["url"], "video_id": video_id, "type": cached.get("type", "mp3")}
+                return {"status": "success", "url": cached["url"], "video_id": video_id, "type": "audio/mp3"}
         
-        # Try using Piped API (more reliable than Invidious)
-        piped_instance = "https://piped.kavin.rocks"
+        # Try multiple Piped instances
+        piped_instances = [
+            "https://piped.kavin.rocks",
+            "https://piped.silkky.cloud",
+            "https://piped.moomoo.me",
+            "https://piped.artemislena.eu"
+        ]
         
-        try:
-            # Get video info from Piped
-            resp = req.get(
-                f'{piped_instance}/api/v1/streams/{video_id}',
-                timeout=15,
-                headers={'User-Agent': 'Mozilla/5.0'}
-            )
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                audio_streams = data.get('audioStreams', [])
+        for piped_instance in piped_instances:
+            try:
+                print(f"Trying Piped instance: {piped_instance}")
                 
-                # Get best quality audio
-                if audio_streams:
-                    # Sort by bitrate (highest first)
-                    audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
-                    stream_url = audio_streams[0].get('url')
+                # Get video info from Piped
+                resp = req.get(
+                    f'{piped_instance}/api/v1/streams/{video_id}',
+                    timeout=10,
+                    headers={'User-Agent': 'Mozilla/5.0'}
+                )
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    audio_streams = data.get('audioStreams', [])
                     
-                    if stream_url:
-                        # Cache it
-                        stream_cache[video_id] = {
-                            "url": stream_url,
-                            "type": "audio",
-                            "timestamp": time.time()
-                        }
+                    # Get best quality audio
+                    if audio_streams:
+                        # Sort by bitrate (highest first)
+                        audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
+                        stream_url = audio_streams[0].get('url')
                         
-                        return {
-                            "status": "success",
-                            "url": stream_url,
-                            "type": "audio/mp3",
-                            "video_id": video_id
-                        }
+                        if stream_url:
+                            # Cache it
+                            stream_cache[video_id] = {
+                                "url": stream_url,
+                                "type": "audio",
+                                "timestamp": time.time()
+                            }
+                            
+                            print(f"Success from {piped_instance}")
+                            return {
+                                "status": "success",
+                                "url": stream_url,
+                                "type": "audio/mp3",
+                                "video_id": video_id
+                            }
+            except Exception as e:
+                print(f"Piped instance {piped_instance} failed: {str(e)}")
+                continue
+        
+        # Try HLS stream extraction using another method
+        try:
+            print(f"Trying alternative audio extraction for {video_id}")
+            # Try using a direct YouTube extraction service
+            alt_services = [
+                f"https://yt-audio.herokuapp.com/api/v1/download?video_id={video_id}",
+                f"https://api.codetabs.com/v1/proxy?quest=https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}"
+            ]
+            
+            for service_url in alt_services:
+                try:
+                    resp = req.get(service_url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+                    if resp.status_code == 200:
+                        # If we get any response, try to extract URL
+                        try:
+                            json_data = resp.json()
+                            if isinstance(json_data, dict) and 'download_url' in json_data:
+                                stream_url = json_data['download_url']
+                                stream_cache[video_id] = {
+                                    "url": stream_url,
+                                    "type": "audio",
+                                    "timestamp": time.time()
+                                }
+                                return {
+                                    "status": "success",
+                                    "url": stream_url,
+                                    "type": "audio/mp3",
+                                    "video_id": video_id
+                                }
+                        except:
+                            pass
+                except:
+                    pass
         except Exception as e:
-            print(f"Piped API error: {str(e)}")
+            print(f"Alternative service failed: {str(e)}")
         
-        # Fallback: Return YouTube embed URL
-        # Frontend should use this with an iframe player
-        youtube_embed = f"https://www.youtube.com/embed/{video_id}?autoplay=1"
-        
-        stream_cache[video_id] = {
-            "url": youtube_embed,
-            "type": "embed",
-            "timestamp": time.time()
-        }
-        
+        # If all extraction methods fail, return error
         return {
-            "status": "success",
-            "url": youtube_embed,
-            "type": "embed",
-            "video_id": video_id,
-            "note": "Using fallback player - direct stream unavailable"
+            "status": "error",
+            "message": "Unable to extract audio stream. Try searching for the song instead.",
+            "video_id": video_id
         }
         
     except Exception as e:
