@@ -81,64 +81,68 @@ def get_home_data():
 def get_stream(video_id: str):
     """Get playable audio stream URL for a YouTube video"""
     try:
+        import requests as req
+        
         # Check cache first
         if video_id in stream_cache:
             cached = stream_cache[video_id]
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
-                return {"status": "success", "url": cached["url"]}
+                return {"status": "success", "url": cached["url"], "type": cached.get("type", "mp3")}
         
-        # Method 1: Try using InvidiousInstance to get stream URL
-        # InvidiousAPI provides direct stream URLs
-        import requests as req
+        # Try using Piped API (more reliable than Invidious)
+        piped_instance = "https://piped.kavin.rocks"
         
-        invidious_instances = [
-            'https://inv.vern.cc',
-            'https://invidious.io',
-            'https://yewtu.be'
-        ]
-        
-        stream_url = None
-        
-        for instance in invidious_instances:
-            try:
-                # Get video info from Invidious
-                resp = req.get(
-                    f'{instance}/api/v1/videos/{video_id}',
-                    timeout=10
-                )
+        try:
+            # Get video info from Piped
+            resp = req.get(
+                f'{piped_instance}/api/v1/streams/{video_id}',
+                timeout=15,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                audio_streams = data.get('audioStreams', [])
                 
-                if resp.status_code == 200:
-                    data = resp.json()
-                    # Get the best audio format
-                    adaptive_formats = data.get('adaptiveFormats', [])
-                    
-                    for fmt in adaptive_formats:
-                        if 'audio' in fmt.get('type', ''):
-                            stream_url = fmt.get('url')
-                            if stream_url:
-                                break
+                # Get best quality audio
+                if audio_streams:
+                    # Sort by bitrate (highest first)
+                    audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
+                    stream_url = audio_streams[0].get('url')
                     
                     if stream_url:
-                        break
-            except:
-                continue
+                        # Cache it
+                        stream_cache[video_id] = {
+                            "url": stream_url,
+                            "type": "audio",
+                            "timestamp": time.time()
+                        }
+                        
+                        return {
+                            "status": "success",
+                            "url": stream_url,
+                            "type": "audio/mp3",
+                            "video_id": video_id
+                        }
+        except Exception as e:
+            print(f"Piped API error: {str(e)}")
         
-        # Fallback: Use direct YouTube URL construction
-        if not stream_url:
-            # Return a working YouTube URL that can be embedded
-            stream_url = f"https://www.youtube.com/watch?v={video_id}"
+        # Fallback: Return YouTube embed URL
+        # Frontend should use this with an iframe player
+        youtube_embed = f"https://www.youtube.com/embed/{video_id}?autoplay=1"
         
-        # Cache it
         stream_cache[video_id] = {
-            "url": stream_url,
+            "url": youtube_embed,
+            "type": "embed",
             "timestamp": time.time()
         }
         
         return {
             "status": "success",
-            "url": stream_url,
+            "url": youtube_embed,
+            "type": "youtube_embed",
             "video_id": video_id,
-            "type": "audio/mpeg" if "googlevideo" in stream_url else "youtube"
+            "note": "Using fallback player - direct stream unavailable"
         }
         
     except Exception as e:
