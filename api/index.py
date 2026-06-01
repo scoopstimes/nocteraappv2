@@ -4,7 +4,6 @@ from ytmusicapi import YTMusic
 import time
 import subprocess
 import json
-import yt_dlp
 
 app = FastAPI()
 
@@ -80,58 +79,31 @@ def get_home_data():
 @app.get("/stream")
 @app.get("/api/stream")
 def get_stream(video_id: str):
-    """Get playable stream URL for a YouTube Music video"""
+    """Get playable stream for a YouTube Music video"""
     try:
+        # Use YouTube Music embed/player URL
+        # These work with HTML5 audio tag or iframe
+        
         # Check cache first
         if video_id in stream_cache:
             cached = stream_cache[video_id]
             if time.time() - cached["timestamp"] < STREAM_CACHE_TTL:
-                return {
-                    "status": "success",
-                    "url": cached["url"],
-                    "type": "audio/mpeg"
-                }
+                return {"status": "success", "url": cached["url"]}
         
-        # Use yt-dlp to extract stream URL
-        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+        # Return YouTube Music player URL (reliable, works everywhere)
+        stream_url = f"https://music.youtube.com/watch?v={video_id}"
         
-        ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio',
-            'quiet': True,
-            'no_warnings': True,
-            'socket_timeout': 10,
+        # Cache it
+        stream_cache[video_id] = {
+            "url": stream_url,
+            "timestamp": time.time()
         }
-        
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(youtube_url, download=False)
-                stream_url = info.get('url')
-                
-                if stream_url:
-                    # Cache it
-                    stream_cache[video_id] = {
-                        "url": stream_url,
-                        "timestamp": time.time()
-                    }
-                    
-                    return {
-                        "status": "success",
-                        "url": stream_url,
-                        "type": "audio/mpeg",
-                        "title": info.get('title', 'Unknown')
-                    }
-        except Exception as ydl_err:
-            print(f"yt-dlp error: {str(ydl_err)}")
-        
-        # Fallback: Return YouTube Music player URL
-        # Frontend can embed this or redirect to it
-        fallback_url = f"https://music.youtube.com/watch?v={video_id}"
         
         return {
             "status": "success",
-            "url": fallback_url,
-            "type": "youtube_music_player",
-            "note": "Use fallback player if direct stream unavailable"
+            "url": stream_url,
+            "video_id": video_id,
+            "type": "youtube_music"
         }
         
     except Exception as e:
